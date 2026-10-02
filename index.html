@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Controle de Medidores</title>
+<script defer src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header>
+  <div class="header-inner">
+    <div class="brand">
+      <div class="logo">CM</div>
+      <div><h1>Controle de Instalação e Retirada de Medidores</h1><small>Base acumulativa • histórico diário • backup e restauração</small></div>
+    </div>
+    <div class="header-actions">
+      <button class="primary" onclick="openImport()">＋ Importar Excel</button>
+      <button onclick="exportExcel()">⇩ Exportar Consolidado</button>
+      <button onclick="backupData()">⛁ Backup</button>
+    </div>
+  </div>
+</header>
+
+<div class="container">
+  <div class="tabs">
+    <div class="tab active" data-page="dash">Dashboard</div>
+    <div class="tab" data-page="mov">Movimentações</div>
+    <div class="tab" data-page="busca">Consulta de Medidor</div>
+    <div class="tab tab-alert" data-page="alertas">⚠ Dígito / Medidores &lt; 11 <span id="invalidMeterBadge" class="alert-badge">0</span></div>
+    <div class="tab" data-page="imports">Histórico de Importações</div>
+    <div class="tab" data-page="config">Configurações / Backup</div>
+  </div>
+
+  <section id="dash" class="page active">
+    <div class="grid-kpi">
+      <div class="kpi inst"><div class="label">Instalações</div><div id="kInst" class="value">0</div><div class="sub">Medidores instalados</div></div>
+      <div class="kpi ret"><div class="label">Retiradas</div><div id="kRet" class="value">0</div><div class="sub">Medidores retirados</div></div>
+      <div class="kpi saldo"><div class="label">Saldo</div><div id="kSaldo" class="value">0</div><div class="sub">Instalados − retirados</div></div>
+      <div class="kpi"><div class="label">Movimentações</div><div id="kMov" class="value">0</div><div class="sub">Registros com medidor</div></div>
+      <div class="kpi"><div class="label">Bases importadas</div><div id="kBases" class="value">0</div><div class="sub">Cargas salvas</div></div>
+    </div>
+    <div class="panel">
+      <div class="row">
+        <div class="col-4"><label>Mês</label><select id="fMes" onchange="renderAll()"><option value="">Todos</option></select></div>
+        <div class="col-4"><label>Data</label><select id="fData" onchange="renderAll()"><option value="">Todas</option></select></div>
+        <div class="col-4"><label>Tipo de Fase</label><select id="fFase" onchange="renderAll()"><option value="">Todas</option></select></div>
+        <div class="col-4"><label>Tipo de Nota</label><select id="fTipo" onchange="renderAll()"><option value="">Todos</option></select></div>
+      </div>
+    </div>
+    <div class="charts">
+      <div class="panel chartbox"><h3>Instalações x Retiradas por Dia</h3><canvas id="chartDay"></canvas></div>
+      <div class="panel chartbox"><h3>Movimentações por Tipo de Fase</h3><canvas id="chartPhase"></canvas></div>
+    </div>
+    <div class="panel"><h3>Últimas movimentações</h3><div class="table-wrap"><table id="lastTable"></table></div></div>
+  </section>
+
+  <section id="mov" class="page">
+    <div class="panel">
+      <h2>Movimentações acumuladas</h2>
+      <div class="row">
+        <div class="col-4"><label>Pesquisar</label><input id="qMov" placeholder="Medidor, nota, equipe, bairro..." oninput="renderMovTable()"></div>
+        <div class="col-4"><label>Movimento</label><select id="mTipo" onchange="renderMovTable()"><option value="">Todos</option><option value="Instalação">Instalação</option><option value="Retirada">Retirada</option><option value="Instalação + Retirada">Instalação + Retirada</option></select></div>
+        <div class="col-4"><label>Quantidade visível</label><select id="mLimit" onchange="renderMovTable()"><option>100</option><option>250</option><option>500</option><option>1000</option><option value="999999">Todos</option></select></div>
+      </div>
+    </div>
+    <div class="panel"><div class="table-wrap"><table id="movTable"></table></div></div>
+  </section>
+
+  <section id="busca" class="page">
+    <div class="panel">
+      <h2>Consulta de medidores em massa</h2>
+      <div class="notice">Cole um ou vários números de medidores. Você pode informar <b>um por linha</b> ou separar por vírgula, ponto e vírgula ou espaço. A consulta verifica <b>Medidor</b>, <b>Medidor Retirado</b> e <b>Medidor Instalado</b> em todo o histórico salvo.</div>
+      <div style="margin-top:14px">
+        <label>Medidores para consulta</label>
+        <textarea id="meterSearch" rows="7" placeholder="Ex.:&#10;25010202704&#10;25010202705&#10;25010202706" oninput="updateMeterQueryCount()" style="width:100%;background:#fff;color:#17324d;border:1px solid #cbd8e4;border-radius:9px;padding:10px;outline:none;resize:vertical"></textarea>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px">
+        <button class="primary" onclick="searchMeter()">Consultar em massa</button>
+        <button onclick="clearMeterSearch()">Limpar consulta</button>
+        <span id="meterQueryCount" class="muted small">0 medidor(es) informado(s)</span>
+      </div>
+    </div>
+    <div class="panel" id="meterResult"><span class="muted">Nenhuma consulta realizada.</span></div>
+  </section>
+
+  <section id="alertas" class="page">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;gap:14px;align-items:flex-start;flex-wrap:wrap">
+        <div>
+          <h2>⚠ Validação de Medidores Instalados — 11 dígitos</h2>
+          <div class="notice">Todo <b>Medidor Instalado</b> deve possuir <b>11 dígitos</b>. Para números com <b>exatamente 10 dígitos</b>, o app calcula o dígito verificador conforme a mesma regra da planilha de referência e mostra uma <b>sugestão de 11 dígitos</b>. <b>O valor original nunca é alterado automaticamente</b>: toda sugestão fica separada como alerta para conferência.</div>
+        </div>
+        <button onclick="exportInvalidMeters()">⇩ Exportar inconsistências</button>
+      </div>
+      <div class="grid-kpi" style="grid-template-columns:repeat(3,minmax(180px,1fr));margin-top:16px;margin-bottom:0">
+        <div class="kpi"><div class="label">Instalados analisados</div><div id="kInstalledChecked" class="value">0</div><div class="sub">Com número informado</div></div>
+        <div class="kpi"><div class="label">Corretos — 11+ dígitos</div><div id="kInstalledOk" class="value" style="color:var(--green)">0</div><div class="sub">Não sinalizados</div></div>
+        <div class="kpi"><div class="label">Atenção — menos de 11</div><div id="kInstalledInvalid" class="value" style="color:var(--red)">0</div><div class="sub">Precisam de conferência</div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="row">
+        <div class="col-8"><label>Pesquisar inconsistências</label><input id="qInvalidMeter" placeholder="Medidor, nota, equipe, cidade, bairro..." oninput="renderInvalidMeters()"></div>
+        <div class="col-4"><label>Quantidade visível</label><select id="invalidLimit" onchange="renderInvalidMeters()"><option>100</option><option>250</option><option>500</option><option value="999999">Todos</option></select></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h3>Medidores com possível dígito ausente — conferir antes de corrigir</h3>
+      <div class="table-wrap"><table id="invalidMeterTable"></table></div>
+    </div>
+  </section>
+
+  <section id="imports" class="page">
+    <div class="panel">
+      <h2>Histórico de importações</h2>
+      <div class="notice">Cada arquivo diário fica registrado. Ao importar uma nova base, os dados anteriores são preservados. Registros duplicados são ignorados. <b>Agora você pode excluir uma base específica</b> sem precisar limpar todo o banco.</div>
+      <div id="importList" style="margin-top:12px"></div>
+    </div>
+  </section>
+
+  <section id="config" class="page">
+    <div class="panel">
+      <h2>Backup e segurança</h2>
+      <div class="row">
+        <div class="col-4"><button class="success" style="width:100%" onclick="backupData()">Baixar backup completo (.json)</button></div>
+        <div class="col-4"><button style="width:100%" onclick="document.getElementById('restoreFile').click()">Restaurar backup</button><input id="restoreFile" type="file" accept=".json" hidden onchange="restoreBackup(this.files[0])"></div>
+        <div class="col-4"><button class="danger" style="width:100%" onclick="clearDatabase()">Limpar toda a base</button></div>
+      </div>
+      <div class="notice" style="margin-top:14px">Recomendação: faça um backup periódico. Os dados ficam salvos neste navegador/dispositivo usando IndexedDB.</div>
+    </div>
+    <div class="panel">
+      <h2>Mapeamento utilizado</h2>
+      <div class="statline"><span>Principal</span><b>Medidor Instalado / Medidor Retirado</b></div>
+      <div class="statline"><span>Complementares</span><b>Medidor, Tipo Fase, Observação/Observações, Tipo de Atividade (nota)</b></div>
+      <div class="statline"><span>Identificação</span><b>Data, Recurso, Cidade, Bairro, Número da Nota, ID da Atividade</b></div>
+      <div class="statline"><span>Base analisada</span><b>Atividades-COI-AP_08_09_26</b></div>
+    </div>
+  </section>
+</div>
+
+<div id="importModal" style="display:none;position:fixed;inset:0;background:rgba(23,50,77,.25);z-index:50;align-items:center;justify-content:center;padding:20px">
+  <div class="panel" style="width:min(720px,100%);margin:0">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h2>Importar base diária</h2><button onclick="closeImport()">✕</button></div>
+    <div id="dropzone" class="dropzone" onclick="document.getElementById('excelFile').click()">
+      <div style="font-size:34px">📊</div>
+      <b>Selecione ou arraste a planilha Excel</b><br><span class="muted small">.xlsx, .xls ou .csv</span>
+      <input id="excelFile" type="file" accept=".xlsx,.xls,.csv" hidden onchange="handleImport(this.files[0])">
+      <div class="progress"><div id="progressBar"></div></div>
+    </div>
+    <div id="importMsg" class="small muted" style="margin-top:10px"></div>
+  </div>
+</div>
+
+<div class="footer">Controle de Medidores • Validação automática de 11 dígitos • Base local acumulativa • Backup recomendado</div>
+
+<script defer src="js/app.js"></script>
+</body>
+</html>
